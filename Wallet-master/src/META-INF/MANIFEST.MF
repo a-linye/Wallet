@@ -1,0 +1,19 @@
+Manifest-Version: 1.0
+Main-Class: cn.edu.gzhu.Test
+Class-Path: libs\jackson-core-2.8.5.jar libs\jnr-posix-3.0.33.jar libs\p
+ rov-1.54.0.0.jar libs\crypto-3.0.1-android.jar libs\BIP32derivation-201
+ 9.01.27.jar libs\core-1.58.0.0.jar libs\SHA256-2019.01.27.jar libs\Hash
+ 160-2019.01.27.jar libs\Base58-2019.01.27.jar libs\ToRuntime-2019.01.27
+ .jar libs\utils-3.0.1-android.jar libs\fastjson-1.2.35.jar libs\asm-ana
+ lysis-5.0.3.jar libs\logging-interceptor-3.8.1.jar libs\jackson-databin
+ d-2.8.5.jar libs\abi-3.6.0.jar libs\rlp-3.6.0.jar libs\bcprov-jdk15on-1
+ .54.jar libs\okhttp-3.8.1.jar libs\jnr-enxio-0.14.jar libs\Java-WebSock
+ et-1.3.8.jar libs\jffi-1.2.14.jar libs\utils-3.6.0.jar libs\okio-1.13.0
+ .jar libs\crypto-3.6.0.jar libs\tuples-3.6.0.jar libs\jnr-unixsocket-0.
+ 15.jar libs\core-3.6.0.jar libs\jnr-x86asm-1.0.2.jar libs\jnr-ffi-2.1.2
+ .jar libs\asm-5.0.3.jar libs\jnr-constants-0.9.6.jar libs\slf4j-simple-
+ 1.7.25.jar libs\jffi-1.2.14-native.jar libs\asm-tree-5.0.3.jar libs\jac
+ kson-annotations-2.8.0.jar libs\asm-util-5.0.3.jar libs\asm-commons-5.0
+ .3.jar libs\rxjava-1.2.4.jar libs\lombok-1.16.18.jar libs\slf4j-api-1.7
+ .25.jar
+
