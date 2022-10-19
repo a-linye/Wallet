@@ -89,7 +89,6 @@ public class WalletController extends HttpServlet {
         map.put("data", "");
         map.put("gasLimit", gasLimit);
         map.put("gasPrice", gasPrice);
-        map.put("gasPrice", gasPrice);
         map.put("nonce", nonce);
         map.put("value", amountWei);
         map.put("to", "0x" + to);

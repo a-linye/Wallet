@@ -57,8 +57,7 @@ public class MultiPartFile {
 
     public static void download(String path, HttpServletResponse response) throws Exception {
         String fileName = null;
-        FileInputStream fis = null;
-        File file = new File(uploadPath + path);
+        File file = new File("D:/" + path);
         if (path.contains("/")) fileName = path.substring(path.lastIndexOf("/"), path.length());
         else fileName = path;//如果文件在根路径
         if (!file.exists()) {
@@ -70,6 +69,7 @@ public class MultiPartFile {
             return;
         }
         //附件形式下载
+        FileInputStream fis = new FileInputStream(file);
         response.setHeader("content-disposition", "attachment;fileName=" + URLEncoder.encode(fileName, "UTF-8"));
         response.setContentType("form/data;charset=utf-8");
         FileCopyUtils.copy(fis, response.getOutputStream());
