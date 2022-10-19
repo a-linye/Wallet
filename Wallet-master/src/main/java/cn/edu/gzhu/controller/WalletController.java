@@ -12,6 +12,7 @@ import io.swagger.annotations.ApiOperation;
 import org.apache.http.entity.ContentType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.stereotype.Controller;
+import org.springframework.util.FileCopyUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,6 +31,7 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -113,8 +115,10 @@ public class WalletController extends HttpServlet {
 
     @ApiOperation(value = "冷钱包对离线交易签名")
     @PostMapping("/signTransaction")
-    public MultipartFile signTransaction(@RequestParam MultipartFile file,
-                                @RequestParam String privateKey
+    public Boolean signTransaction(
+            @RequestParam MultipartFile file,
+            @RequestParam String privateKey,
+            HttpServletResponse response
     ) {
         BufferedReader bufferedReader = null;
         if (file != null) {
@@ -140,9 +144,13 @@ public class WalletController extends HttpServlet {
                             jsonObject.getString("data"));
                     //签名交易
                     byte[] signMessage = TransactionEncoder.signMessage(rawTransaction, credentials);
-                    InputStream inputStream = new ByteArrayInputStream(signMessage);
-                    file = new MockMultipartFile(ContentType.APPLICATION_OCTET_STREAM.toString(), inputStream);
-                    return file;
+
+                    //附件形式下载
+                    response.setHeader("content-disposition", "attachment;fileName=" + URLEncoder.encode("transaction.txt", "UTF-8"));
+                    response.setContentType("form/data;charset=utf-8");
+                    response.getOutputStream().write(signMessage);
+                    response.flushBuffer();
+                    return true;
                 }
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -152,77 +160,77 @@ public class WalletController extends HttpServlet {
     }
 
 
-            @ApiOperation(value = "热钱包广播交易")
-            @GetMapping("/transaction")
-            public TransactionDTO transaction (@RequestParam File file, @RequestParam String address){
+    @ApiOperation(value = "热钱包广播交易")
+    @PostMapping("/transaction")
+    public TransactionDTO transaction(@RequestParam MultipartFile file, @RequestParam String address) {
 
-                TransactionDTO transactionDTO = new TransactionDTO();
+        TransactionDTO transactionDTO = new TransactionDTO();
 
-                try {
-
-                    byte[] bytes = FileReaderUtils.readOnce(file);
-                    //广播交易
-                    String transactionHash = web3j.ethSendRawTransaction(Numeric.toHexString(bytes)).sendAsync().get().getTransactionHash();
-                    if (transactionHash != null) {
-                        //交易成功,更新余额
-                        EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
-                        String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-                        transactionDTO.setBalance(balance);
-                        transactionDTO.setStatus(1);
-                        transactionDTO.setMassage("交易成功");
-                    } else {
-                        transactionDTO.setBalance("0");
-                        transactionDTO.setStatus(0);
-                        transactionDTO.setMassage("交易失败");
-                    }
-
-                } catch (UnsupportedEncodingException | FileNotFoundException e) {
-                    System.out.println("找不到指定的文件!");
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    System.out.println("读取文件内容时出错!");
-                    e.printStackTrace();
-                } catch (ExecutionException | InterruptedException e) {
-                    System.out.println("交易失败!");
-                    throw new RuntimeException(e);
-                }
-                return transactionDTO;
-            }
-
-            @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
-            @GetMapping("/getAccountIfo")
-            public String getAccountIfo (String address) throws IOException {
+        try {
+            byte[] bytes = file.getBytes();
+            //byte[] bytes = FileReaderUtils.readOnce(file);
+            //广播交易
+            String transactionHash = web3j.ethSendRawTransaction(Numeric.toHexString(bytes)).sendAsync().get().getTransactionHash();
+            if (transactionHash != null) {
+                //交易成功,更新余额
                 EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
                 String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-                return balance;
+                transactionDTO.setBalance(balance);
+                transactionDTO.setStatus(1);
+                transactionDTO.setMassage("交易成功");
+            } else {
+                transactionDTO.setBalance("0");
+                transactionDTO.setStatus(0);
+                transactionDTO.setMassage("交易失败");
             }
 
+        } catch (UnsupportedEncodingException | FileNotFoundException e) {
+            System.out.println("找不到指定的文件!");
+            e.printStackTrace();
+        } catch (IOException e) {
+            System.out.println("读取文件内容时出错!");
+            e.printStackTrace();
+        } catch (ExecutionException | InterruptedException e) {
+            System.out.println("交易失败!");
+            throw new RuntimeException(e);
+        }
+        return transactionDTO;
+    }
 
-            @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
-            @GetMapping("/getCurrentBalance")
-            public String getCurrentBalance (String address) throws IOException {
-                EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
-                String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-                return balance;
-            }
-
-            @ApiOperation(value = "查询交易信息")
-            @GetMapping("/getTransaction")
-            public void getTransaction (String address) throws IOException {
-                //String url = "https://api-ropsten.etherscan.io/api?module=account&action=txlist&address=0xE003d9942B56B3da1A30349A7EC9ba29CEb12360&startblock=0&endblock=99999999&page=1&offset=10&sort=asc&apikey=YourApiKeyToken";
-                //String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
+    @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
+    @GetMapping("/getAccountIfo")
+    public String getAccountIfo(String address) throws IOException {
+        EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
+        String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
+        return balance;
+    }
 
 
-                String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
-                RestTemplate restTemplate = new RestTemplate();
-                //String tx = restTemplate.getForObject("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken", String.class);
-                String body = restTemplate.getForEntity(url, String.class).getBody();
-                System.out.println(body);
+    @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
+    @GetMapping("/getCurrentBalance")
+    public String getCurrentBalance(String address) throws IOException {
+        EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
+        String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
+        return balance;
+    }
+
+    @ApiOperation(value = "查询交易信息")
+    @GetMapping("/getTransaction")
+    public void getTransaction(String address) throws IOException {
+        //String url = "https://api-ropsten.etherscan.io/api?module=account&action=txlist&address=0xE003d9942B56B3da1A30349A7EC9ba29CEb12360&startblock=0&endblock=99999999&page=1&offset=10&sort=asc&apikey=YourApiKeyToken";
+        //String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
+
+
+        String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
+        RestTemplate restTemplate = new RestTemplate();
+        //String tx = restTemplate.getForObject("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken", String.class);
+        String body = restTemplate.getForEntity(url, String.class).getBody();
+        System.out.println(body);
 
 //        //查询区块哈希
 //        EtherScanApi api = new EtherScanApi(EthNetwork.GORLI);
 //        int i = api.block().hashCode();
 //        return i;
-            }
+    }
 
-        }
+}

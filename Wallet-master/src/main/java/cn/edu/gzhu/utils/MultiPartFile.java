@@ -13,7 +13,7 @@ import java.net.URLEncoder;
 import java.util.Map;
 
 public class MultiPartFile {
-    
+
     public static String uploadPath;
 
     public static boolean uploadFile(MultipartFile file, String fileName) {
