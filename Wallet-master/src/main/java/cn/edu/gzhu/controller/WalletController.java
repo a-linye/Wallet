@@ -4,17 +4,16 @@ import cn.edu.gzhu.api.WalletManager;
 import cn.edu.gzhu.entity.EcKeys;
 import cn.edu.gzhu.entity.KeyMnemonicDTO;
 import cn.edu.gzhu.entity.TransactionDTO;
-import cn.edu.gzhu.utils.FileReaderUtils;
+import cn.edu.gzhu.entity.TransactionReq;
+import cn.edu.gzhu.result.ResponseResult;
+import cn.edu.gzhu.service.impl.WalletServiceImpl;
 import cn.edu.gzhu.utils.MultiPartFile;
+import cn.hutool.core.bean.BeanUtil;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import org.apache.http.entity.ContentType;
-import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.stereotype.Controller;
-import org.springframework.util.FileCopyUtils;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.web3j.crypto.Credentials;
 import org.web3j.crypto.RawTransaction;
@@ -22,10 +21,12 @@ import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.core.methods.response.EthGetBalance;
+import org.web3j.protocol.core.methods.response.Transaction;
 import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
@@ -34,21 +35,24 @@ import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 
 @RequestMapping("/wallet")
 @RestController
 @Api("冷热钱包")
-@Controller
 public class WalletController extends HttpServlet {
 
     //链接到区块链网络
     private final static Web3j web3j = Web3j.build(new HttpService("http://172.22.110.18:8001/"));
 
+    @Resource
+    private WalletServiceImpl walletService;
+
     @ApiOperation(value = "获取助记词和密钥对")
     @GetMapping("/getKeyAndMnemonic")
-    public KeyMnemonicDTO getKeyAndMnemonic() {
+    public ResponseResult<KeyMnemonicDTO> getKeyAndMnemonic() {
 
         KeyMnemonicDTO keyMnemonicDTO = new KeyMnemonicDTO();
         WalletManager manager = new WalletManager();
@@ -58,20 +62,20 @@ public class WalletController extends HttpServlet {
         EcKeys ecKeys = manager.mnemonicsToKeyPair(mnemonic, 0);
         keyMnemonicDTO.setEcKeys(ecKeys);
         keyMnemonicDTO.setMnemonic(mnemonic);
-        return keyMnemonicDTO;
+        return ResponseResult.success(keyMnemonicDTO);
     }
 
     @ApiOperation("通过助记词恢复密钥")
     @PostMapping("/restoreKeys")
-    public EcKeys restoreKeys(@RequestParam() String mnemonic) {
+    public ResponseResult<EcKeys> restoreKeys(@RequestParam() String mnemonic) {
         WalletManager manager = new WalletManager();
         EcKeys ecKeys = manager.mnemonicsToKeyPair(mnemonic, 0);
-        return ecKeys;
+        return ResponseResult.success(ecKeys);
     }
 
     @ApiOperation("热钱包请求生成离线交易")
     @PostMapping("/transactionOrder")
-    public boolean transactionOrder(
+    public ResponseResult transactionOrder(
             @RequestParam String from,
             @RequestParam String to,
             @RequestParam String amount
@@ -94,27 +98,29 @@ public class WalletController extends HttpServlet {
         map.put("to", "0x" + to);
 
         try {
-            return MultiPartFile.uploadDataToFile("transaction.txt", map);
+            MultiPartFile.uploadDataToFile("transaction.txt", map);
+            return ResponseResult.success();
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return false;
+        return ResponseResult.fail("生成交易失败");
     }
 
     @ApiOperation("热钱包下载交易信息")
     @PostMapping("/downLoad")
-    public boolean downLoad(HttpServletResponse response) throws IOException {
+    public ResponseResult downLoad(HttpServletResponse response) throws IOException {
         try {
             MultiPartFile.download("transaction.txt", response);
+            return ResponseResult.success();
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return false;
+        return ResponseResult.fail("交易信息下载失败");
     }
 
     @ApiOperation(value = "冷钱包对离线交易签名")
     @PostMapping("/signTransaction")
-    public Boolean signTransaction(
+    public ResponseResult signTransaction(
             @RequestParam MultipartFile file,
             @RequestParam String privateKey,
             HttpServletResponse response
@@ -149,21 +155,19 @@ public class WalletController extends HttpServlet {
                     response.setContentType("form/data;charset=utf-8");
                     response.getOutputStream().write(signMessage);
                     response.flushBuffer();
-                    return true;
+                    return ResponseResult.success("签名成功");
                 }
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
-        return null;
+        return ResponseResult.fail("签名失败");
     }
 
 
     @ApiOperation(value = "热钱包广播交易")
     @PostMapping("/transaction")
-    public TransactionDTO transaction(@RequestParam MultipartFile file, @RequestParam String address) {
-
-        TransactionDTO transactionDTO = new TransactionDTO();
+    public ResponseResult transaction(@RequestParam MultipartFile file) {
 
         try {
             byte[] bytes = file.getBytes();
@@ -171,16 +175,27 @@ public class WalletController extends HttpServlet {
             //广播交易
             String transactionHash = web3j.ethSendRawTransaction(Numeric.toHexString(bytes)).sendAsync().get().getTransactionHash();
             if (transactionHash != null) {
-                //交易成功,更新余额
-                EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
-                String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-                transactionDTO.setBalance(balance);
-                transactionDTO.setStatus(1);
-                transactionDTO.setMassage("交易成功");
+                //交易成功,保存交易信息
+//                EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
+//                String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
+//                transactionDTO.setBalance(balance);
+//                transactionDTO.setStatus(1);
+                Optional<Transaction> transactions = web3j.ethGetTransactionByHash(transactionHash).send().getTransaction();
+                if (transactions.isPresent()) {
+                    Transaction transaction = transactions.get();
+                    TransactionDTO transactionDTO = new TransactionDTO();
+                    BeanUtil.copyProperties(transaction,transactionDTO);
+                    transactionDTO.setTxHash(transaction.getHash());
+                    transactionDTO.setTxTo(transaction.getTo());
+                    transactionDTO.setTxFrom(transaction.getFrom());
+                    transactionDTO.setTxValue(transaction.getValue().toString());
+                    boolean save = walletService.save(transactionDTO);
+                    if (save){
+                        return ResponseResult.success();
+                    }
+                }
             } else {
-                transactionDTO.setBalance("0");
-                transactionDTO.setStatus(0);
-                transactionDTO.setMassage("交易失败");
+                return ResponseResult.fail("交易广播失败");
             }
 
         } catch (UnsupportedEncodingException | FileNotFoundException e) {
@@ -193,43 +208,23 @@ public class WalletController extends HttpServlet {
             System.out.println("交易失败!");
             throw new RuntimeException(e);
         }
-        return transactionDTO;
+        return ResponseResult.fail("交易广播失败");
     }
 
     @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
     @GetMapping("/getAccountIfo")
-    public String getAccountIfo(String address) throws IOException {
+    public ResponseResult<String> getAccountIfo(String address) throws IOException {
         EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
         String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-        return balance;
+        return ResponseResult.success(balance);
     }
 
 
-    @ApiOperation(value = "查询余额接口，用于测试以太坊测试网络是否有效果")
-    @GetMapping("/getCurrentBalance")
-    public String getCurrentBalance(String address) throws IOException {
-        EthGetBalance ethGetBlance = web3j.ethGetBalance("0x" + address, DefaultBlockParameterName.LATEST).send();
-        String balance = Convert.fromWei(new BigDecimal(ethGetBlance.getBalance()), Convert.Unit.ETHER).toPlainString();
-        return balance;
-    }
-
-    @ApiOperation(value = "查询交易信息")
-    @GetMapping("/getTransaction")
-    public void getTransaction(String address) throws IOException {
-        //String url = "https://api-ropsten.etherscan.io/api?module=account&action=txlist&address=0xE003d9942B56B3da1A30349A7EC9ba29CEb12360&startblock=0&endblock=99999999&page=1&offset=10&sort=asc&apikey=YourApiKeyToken";
-        //String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
-
-
-        String url = "https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken";
-        RestTemplate restTemplate = new RestTemplate();
-        //String tx = restTemplate.getForObject("https://api.etherscan.io/api?module=block&action=getblockreward&blockno=1&apikey=YourApiKeyToken", String.class);
-        String body = restTemplate.getForEntity(url, String.class).getBody();
-        System.out.println(body);
-
-//        //查询区块哈希
-//        EtherScanApi api = new EtherScanApi(EthNetwork.GORLI);
-//        int i = api.block().hashCode();
-//        return i;
+    @ApiOperation(value = "分页查询查询交易列表")
+    @PostMapping("/getTransaction")
+    public ResponseResult getTransaction(@RequestBody TransactionReq transactionReq){
+        IPage<TransactionDTO> data = walletService.selectAll(transactionReq);
+        return ResponseResult.success(data);
     }
 
 }

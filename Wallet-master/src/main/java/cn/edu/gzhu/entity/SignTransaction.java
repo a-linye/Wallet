@@ -1,5 +1,6 @@
 package cn.edu.gzhu.entity;
 
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.math.BigInteger;
