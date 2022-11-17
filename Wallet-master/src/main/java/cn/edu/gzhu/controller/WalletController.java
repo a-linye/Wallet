@@ -1,30 +1,32 @@
 package cn.edu.gzhu.controller;
 
 import cn.edu.gzhu.api.WalletManager;
-import cn.edu.gzhu.entity.EcKeys;
-import cn.edu.gzhu.entity.KeyMnemonicDTO;
-import cn.edu.gzhu.entity.TransactionDTO;
-import cn.edu.gzhu.entity.TransactionReq;
+import cn.edu.gzhu.entity.*;
 import cn.edu.gzhu.result.ResponseResult;
 import cn.edu.gzhu.service.impl.WalletServiceImpl;
+import cn.edu.gzhu.utils.Aes;
 import cn.edu.gzhu.utils.MultiPartFile;
+import cn.edu.gzhu.utils.Shamir1;
+import cn.edu.gzhu.utils.ToAscii;
 import cn.hutool.core.bean.BeanUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.apache.http.util.TextUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.web3j.crypto.Credentials;
-import org.web3j.crypto.RawTransaction;
-import org.web3j.crypto.TransactionEncoder;
+import org.web3j.crypto.*;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
+import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthGetBalance;
 import org.web3j.protocol.core.methods.response.Transaction;
+import org.web3j.protocol.core.methods.response.Web3Sha3;
 import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
+import sun.security.provider.SecureRandom;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServlet;
@@ -33,9 +35,11 @@ import java.io.*;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
 
@@ -46,14 +50,12 @@ public class WalletController extends HttpServlet {
 
     //链接到区块链网络
     private final static Web3j web3j = Web3j.build(new HttpService("http://172.22.110.18:8001/"));
-
     @Resource
     private WalletServiceImpl walletService;
 
     @ApiOperation(value = "获取助记词和密钥对")
     @GetMapping("/getKeyAndMnemonic")
     public ResponseResult<KeyMnemonicDTO> getKeyAndMnemonic() {
-
         KeyMnemonicDTO keyMnemonicDTO = new KeyMnemonicDTO();
         WalletManager manager = new WalletManager();
         //生成助记词
@@ -62,8 +64,10 @@ public class WalletController extends HttpServlet {
         EcKeys ecKeys = manager.mnemonicsToKeyPair(mnemonic, 0);
         keyMnemonicDTO.setEcKeys(ecKeys);
         keyMnemonicDTO.setMnemonic(mnemonic);
+
         return ResponseResult.success(keyMnemonicDTO);
     }
+
 
     @ApiOperation("通过助记词恢复密钥")
     @PostMapping("/restoreKeys")
@@ -184,13 +188,13 @@ public class WalletController extends HttpServlet {
                 if (transactions.isPresent()) {
                     Transaction transaction = transactions.get();
                     TransactionDTO transactionDTO = new TransactionDTO();
-                    BeanUtil.copyProperties(transaction,transactionDTO);
+                    BeanUtil.copyProperties(transaction, transactionDTO);
                     transactionDTO.setTxHash(transaction.getHash());
                     transactionDTO.setTxTo(transaction.getTo());
                     transactionDTO.setTxFrom(transaction.getFrom());
                     transactionDTO.setTxValue(transaction.getValue().toString());
                     boolean save = walletService.save(transactionDTO);
-                    if (save){
+                    if (save) {
                         return ResponseResult.success();
                     }
                 }
@@ -222,9 +226,122 @@ public class WalletController extends HttpServlet {
 
     @ApiOperation(value = "分页查询查询交易列表")
     @PostMapping("/getTransaction")
-    public ResponseResult getTransaction(@RequestBody TransactionReq transactionReq){
+    public ResponseResult getTransaction(@RequestBody TransactionReq transactionReq) {
         IPage<TransactionDTO> data = walletService.selectAll(transactionReq);
         return ResponseResult.success(data);
     }
 
+    @ApiOperation(value = "门限密钥加密")
+    @PostMapping("/encryption")
+    public ResponseResult encryption(@RequestParam String mnemonics, @RequestParam String password, HttpServletResponse response) {
+        if (password.length() != 16) {
+            return ResponseResult.fail("密码长度错误");
+        }
+        try {
+            String aesPwd = Aes.Encrypt(mnemonics, password);
+            String asciiPwd = ToAscii.strToAscii(aesPwd);
+            final BigInteger secret = new BigInteger(asciiPwd);
+
+            final Random random = new Random();
+            final BigInteger prime = new BigInteger("156804681138953738841981891602908576685172682831672945866413335334809525974827777178164263961707052367620733619560801175565197765638236062095225289241828660391778546509568968600952385561433647554511465765336647559608051805912842383899213360743516446641290400761825923628321376402980469567748721757862451355359");
+            final SecretShare[] shares = Shamir1.split(secret, 6, 10, prime, random);
+            String output = shares[0].toString() + " " + shares[1].toString() + " " + shares[2].toString() + " " + shares[3].toString() + " " + shares[4].toString() + " " + shares[5].toString() + " " + shares[6].toString() + " " + shares[7].toString() + " " + shares[8].toString() + " " + shares[9].toString();
+
+            //将输出保存到文件中
+            //附件形式下载
+            response.setHeader("content-disposition", "attachment;fileName=" + URLEncoder.encode("shares.txt", "UTF-8"));
+            response.getOutputStream().write(output.getBytes(StandardCharsets.UTF_8));
+            response.flushBuffer();
+            System.out.println(output);
+            return ResponseResult.success();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @ApiOperation(value = "门限密钥解密")
+    @PostMapping("/decrypt")
+    public ResponseResult decrypt(@RequestBody Map<Integer, String> map) {
+
+        SecretShare[] shares = new SecretShare[6];
+        int temp = 0;
+
+        for (Integer key : map.keySet()) {
+            String password = map.get(key).trim();
+            if (!TextUtils.isEmpty(password)) {
+                shares[temp] = new SecretShare(key, new BigInteger(password));
+                temp++;
+            } else {
+                return ResponseResult.fail("参数错误");
+            }
+        }
+
+        try {
+            final BigInteger prime = new BigInteger("15680468113895373884198189160290857668517268" +
+                    "28316729458664133353348095259748277771781642639617070523676207336195608011755651" +
+                    "97765638236062095225289241828660391778546509568968600952385561433647554511465" +
+                    "76533664755960805180591284238389921336074351644664129040076182592362832137640298" +
+                    "0469567748721757862451355359");
+
+            BigInteger result = Shamir1.combine(shares, prime);
+
+            String jiemi1 = result.toString();
+            System.out.println(jiemi1);
+
+            //将门限定解出来的密钥转化为分割的ASCII
+            char[] charArr = jiemi1.toCharArray();
+            int[] inputResult = new int[1000];
+            int j = 0;
+            int length = 0;
+            for (int l = 0; l < charArr.length; l++) {
+                if ((int) (charArr[l] - '0') != 1) {
+                    inputResult[j] = (10 * (int) (charArr[l] - '0')) + (int) (charArr[l + 1] - '0');
+                    l++;
+                    j++;
+                } else if ((int) (charArr[l] - '0') == 1) {
+                    inputResult[j] = (100 * (int) (charArr[l] - '0')) + (10 * (int) (charArr[l + 1] - '0')) + (int) (charArr[l + 2] - '0');
+                    l = l + 2;
+                    j++;
+                }
+
+            }
+
+            for (int m = 0; m < inputResult.length; m++) {
+                if (inputResult[m] != 0) {
+                    length++;
+                }
+            }
+
+            System.out.println(inputResult);
+            System.out.println(length);
+            String input = "";
+            for (int n = 0; n < length; n++) {
+                if (n < length - 1) {
+                    input += inputResult[n] + " ";
+                } else {
+                    input += inputResult[n] + "";
+                }
+            }
+            System.out.println(input);
+
+            String s1 = ToAscii.asciiToToStr(input);
+            System.out.println(s1);
+            return ResponseResult.success(s1);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return ResponseResult.fail("参数错误");
+    }
+
+    @ApiOperation(value = "恢复助记词")
+    @GetMapping("/recover")
+    public ResponseResult recover(@RequestParam String sSrc,@RequestParam String password) {
+        String decrypt = null;
+        try {
+            decrypt = Aes.Decrypt(sSrc,password);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return ResponseResult.success(decrypt);
+    }
 }

@@ -18,6 +18,9 @@ public class WalletServiceImpl extends ServiceImpl<WalletMapper, TransactionDTO>
         if (reqDTO.getHash() != null){
             wrapper.eq(TransactionDTO::getTxHash, reqDTO.getHash());
         }
+        if (reqDTO.getAddress() != null){
+            wrapper.eq(TransactionDTO::getTxFrom, reqDTO.getAddress()).or().eq(TransactionDTO::getTxTo,reqDTO.getAddress());
+        }
         wrapper.orderByDesc(TransactionDTO::getId);
         IPage<TransactionDTO> iPage = new Page<>(reqDTO.getPageNumber(), reqDTO.getPageSize());
         IPage<TransactionDTO> data = this.page(iPage, wrapper);

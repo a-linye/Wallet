@@ -8,4 +8,5 @@ public class TransactionReq extends BaseQueryDTO{
     private String nonce;
     private String blockHash;
     private String blockNumber;
+    private String address;
 }
