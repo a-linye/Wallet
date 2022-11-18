@@ -9,24 +9,23 @@ import cn.edu.gzhu.utils.MultiPartFile;
 import cn.edu.gzhu.utils.Shamir1;
 import cn.edu.gzhu.utils.ToAscii;
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import org.apache.http.util.TextUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.web3j.crypto.*;
+import org.web3j.crypto.Credentials;
+import org.web3j.crypto.RawTransaction;
+import org.web3j.crypto.TransactionEncoder;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
-import org.web3j.protocol.core.Request;
 import org.web3j.protocol.core.methods.response.EthGetBalance;
 import org.web3j.protocol.core.methods.response.Transaction;
-import org.web3j.protocol.core.methods.response.Web3Sha3;
 import org.web3j.protocol.http.HttpService;
 import org.web3j.utils.Convert;
 import org.web3j.utils.Numeric;
-import sun.security.provider.SecureRandom;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServlet;
@@ -245,7 +244,7 @@ public class WalletController extends HttpServlet {
             final Random random = new Random();
             final BigInteger prime = new BigInteger("156804681138953738841981891602908576685172682831672945866413335334809525974827777178164263961707052367620733619560801175565197765638236062095225289241828660391778546509568968600952385561433647554511465765336647559608051805912842383899213360743516446641290400761825923628321376402980469567748721757862451355359");
             final SecretShare[] shares = Shamir1.split(secret, 6, 10, prime, random);
-            String output = shares[0].toString() + " " + shares[1].toString() + " " + shares[2].toString() + " " + shares[3].toString() + " " + shares[4].toString() + " " + shares[5].toString() + " " + shares[6].toString() + " " + shares[7].toString() + " " + shares[8].toString() + " " + shares[9].toString();
+            String output = shares[0].toString() + "\n" + shares[1].toString() + "\n" + shares[2].toString() + "\n" + shares[3].toString() + "\n" + shares[4].toString() + "\n" + shares[5].toString() + "\n" + shares[6].toString() + "\n" + shares[7].toString() + "\n" + shares[8].toString() + "\n" + shares[9].toString();
 
             //将输出保存到文件中
             //附件形式下载
@@ -253,7 +252,7 @@ public class WalletController extends HttpServlet {
             response.getOutputStream().write(output.getBytes(StandardCharsets.UTF_8));
             response.flushBuffer();
             System.out.println(output);
-            return ResponseResult.success();
+            return null;
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -261,20 +260,35 @@ public class WalletController extends HttpServlet {
 
     @ApiOperation(value = "门限密钥解密")
     @PostMapping("/decrypt")
-    public ResponseResult decrypt(@RequestBody Map<Integer, String> map) {
+    public ResponseResult decrypt(@RequestBody Password password) {
 
         SecretShare[] shares = new SecretShare[6];
-        int temp = 0;
 
-        for (Integer key : map.keySet()) {
-            String password = map.get(key).trim();
-            if (!TextUtils.isEmpty(password)) {
-                shares[temp] = new SecretShare(key, new BigInteger(password));
-                temp++;
-            } else {
-                return ResponseResult.fail("参数错误");
-            }
+
+        String password1 = password.getPassword1();
+        String password2 = password.getPassword2();
+        String password3 = password.getPassword3();
+        String password4 = password.getPassword4();
+        String password5 = password.getPassword5();
+        String password6 = password.getPassword6();
+
+        if ( StrUtil.isAllNotEmpty(password1, password2, password3,password4,password5,password6)){
+            return ResponseResult.fail("参数错误");
         }
+        Integer n1 = password.getN1();
+        Integer n2 = password.getN2();
+        Integer n3 = password.getN3();
+        Integer n4 = password.getN4();
+        Integer n5 = password.getN5();
+        Integer n6 = password.getN6();
+
+        shares[0] = new SecretShare(n1, new BigInteger(password1));
+        shares[1] = new SecretShare(n2, new BigInteger(password2));
+        shares[2] = new SecretShare(n3, new BigInteger(password3));
+        shares[3] = new SecretShare(n4, new BigInteger(password4));
+        shares[4] = new SecretShare(n5, new BigInteger(password5));
+        shares[5] = new SecretShare(n6, new BigInteger(password6));
+
 
         try {
             final BigInteger prime = new BigInteger("15680468113895373884198189160290857668517268" +
