@@ -9,11 +9,13 @@ import cn.edu.gzhu.utils.MultiPartFile;
 import cn.edu.gzhu.utils.Shamir1;
 import cn.edu.gzhu.utils.ToAscii;
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
+import org.apache.http.util.TextUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.web3j.crypto.Credentials;
@@ -35,10 +37,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutionException;
 
 
@@ -192,6 +191,7 @@ public class WalletController extends HttpServlet {
                     transactionDTO.setTxTo(transaction.getTo());
                     transactionDTO.setTxFrom(transaction.getFrom());
                     transactionDTO.setTxValue(transaction.getValue().toString());
+                    transactionDTO.setCreateTime(new Date());
                     boolean save = walletService.save(transactionDTO);
                     if (save) {
                         return ResponseResult.success();
@@ -264,31 +264,33 @@ public class WalletController extends HttpServlet {
 
         SecretShare[] shares = new SecretShare[6];
 
+        Map<String, String> map = new HashMap<>();
+        map.put(password.getN1(),password.getPassword1());
+        map.put(password.getN2(),password.getPassword2());
+        map.put(password.getN3(),password.getPassword3());
+        map.put(password.getN4(),password.getPassword4());
+        map.put(password.getN5(),password.getPassword5());
+        map.put(password.getN6(),password.getPassword6());
+        map.put(password.getN7(),password.getPassword7());
+        map.put(password.getN8(),password.getPassword8());
+        map.put(password.getN9(),password.getPassword9());
+        map.put(password.getN10(),password.getPassword10());
 
-        String password1 = password.getPassword1();
-        String password2 = password.getPassword2();
-        String password3 = password.getPassword3();
-        String password4 = password.getPassword4();
-        String password5 = password.getPassword5();
-        String password6 = password.getPassword6();
+        int temp = 0;
+        for (String key : map.keySet()) {
+            if (key != null && map.get(key) != null && key != ""  && map.get(key) != "") {
+                if (temp <= 5){
+                    shares[temp] = new SecretShare(new Integer(key), new BigInteger(map.get(key)));
+                    temp++;
+                }else {
+                    break;
+                }
 
-        if ( StrUtil.isAllNotEmpty(password1, password2, password3,password4,password5,password6)){
+            }
+        }
+        if (temp <=5){
             return ResponseResult.fail("参数错误");
         }
-        Integer n1 = password.getN1();
-        Integer n2 = password.getN2();
-        Integer n3 = password.getN3();
-        Integer n4 = password.getN4();
-        Integer n5 = password.getN5();
-        Integer n6 = password.getN6();
-
-        shares[0] = new SecretShare(n1, new BigInteger(password1));
-        shares[1] = new SecretShare(n2, new BigInteger(password2));
-        shares[2] = new SecretShare(n3, new BigInteger(password3));
-        shares[3] = new SecretShare(n4, new BigInteger(password4));
-        shares[4] = new SecretShare(n5, new BigInteger(password5));
-        shares[5] = new SecretShare(n6, new BigInteger(password6));
-
 
         try {
             final BigInteger prime = new BigInteger("15680468113895373884198189160290857668517268" +

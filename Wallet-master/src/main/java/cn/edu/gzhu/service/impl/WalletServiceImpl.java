@@ -15,11 +15,11 @@ public class WalletServiceImpl extends ServiceImpl<WalletMapper, TransactionDTO>
 
     public IPage<TransactionDTO> selectAll(TransactionReq reqDTO){
         LambdaQueryWrapper<TransactionDTO> wrapper = new LambdaQueryWrapper<>();
-        if (reqDTO.getHash() != null){
+        if (reqDTO.getHash() != null && reqDTO.getHash() != ""){
             wrapper.eq(TransactionDTO::getTxHash, reqDTO.getHash());
         }
-        if (reqDTO.getAddress() != null){
-            wrapper.eq(TransactionDTO::getTxFrom, reqDTO.getAddress()).or().eq(TransactionDTO::getTxTo,reqDTO.getAddress());
+        if (reqDTO.getAddress() != null && reqDTO.getAddress() != ""){
+            wrapper.eq(TransactionDTO::getTxFrom, "0x"+reqDTO.getAddress()).or().eq(TransactionDTO::getTxTo,"0x"+reqDTO.getAddress());
         }
         wrapper.orderByDesc(TransactionDTO::getId);
         IPage<TransactionDTO> iPage = new Page<>(reqDTO.getPageNumber(), reqDTO.getPageSize());

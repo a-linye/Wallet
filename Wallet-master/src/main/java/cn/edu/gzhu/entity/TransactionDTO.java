@@ -8,6 +8,8 @@ import com.baomidou.mybatisplus.extension.activerecord.Model;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 
+import java.util.Date;
+
 @Data
 @TableName("transaction")
 @SuppressWarnings("serial")
@@ -83,4 +85,8 @@ public class TransactionDTO  extends Model<TransactionDTO> {
     @TableField("v")
     @ApiModelProperty(name="v",value = "交易签名的值")
     private long v;
+
+    @TableField("create_time")
+    @ApiModelProperty(name="createTime",value = "交易创建时间")
+    private Date createTime;
 }
